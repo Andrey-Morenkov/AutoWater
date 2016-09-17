@@ -27,13 +27,15 @@
  * - таймер 2
  * - Полив без выключения помпы (биты в полях растения)
  * - Valve в класс для удобства инициализации
+ * - Serial.print будет в BT
  */
 
 //-------- Initialization --------
 
-const unsigned char Pump             = 2;            // Помпа
+
 const unsigned char Valve_0          = 3;            // Клапан #1
 const unsigned char Valve_1          = 4;            // Клапан #2
+const unsigned char Pump             = 5;            // Помпа
 const unsigned char Relay_Sensors    = 10;           // Сенсоры
 
 const unsigned char WaterSensor      = A0;           // Сенсор уровня воды
@@ -41,7 +43,7 @@ const unsigned char HygroMeter_0     = A1;           // Гигрометр #1
 const unsigned char HygroMeter_1     = A2;           // Гигрометр #2
 
 const int Alert_WS                   = 470;          // Критическое значение WaterSensor     (0 - сухо, 1024 - мокро)
-const int Alert_HM                   = 400;          // Критическое значение HygroMeter      (1024 - сухо, 0 - мокро)
+const int Alert_HM                   = 700;          // Критическое значение HygroMeter      (1024 - сухо, 0 - мокро)
 const int MaxTime_P                  = 5000;         // Максимальное время работы Pump       (в мс)
 const int MaxFlowers                 = 2;            // Количество контроллируемых цветков
 const int MaxSensors                 = MaxFlowers+1; // Количество сенсоров = кол-во цветков + сенсор воды
