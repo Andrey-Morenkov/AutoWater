@@ -41,7 +41,7 @@ const unsigned char HygroMeter_0     = A1;           // Гигрометр #1
 const unsigned char HygroMeter_1     = A2;           // Гигрометр #2
 
 const int Alert_WS                   = 470;          // Критическое значение WaterSensor     (0 - сухо, 1024 - мокро)
-const int Alert_HM                   = 700;          // Критическое значение HygroMeter      (1024 - сухо, 0 - мокро)
+const int Alert_HM                   = 400;          // Критическое значение HygroMeter      (1024 - сухо, 0 - мокро)
 const int MaxTime_P                  = 5000;         // Максимальное время работы Pump       (в мс)
 const int MaxFlowers                 = 2;            // Количество контроллируемых цветков
 const int MaxSensors                 = MaxFlowers+1; // Количество сенсоров = кол-во цветков + сенсор воды
@@ -56,7 +56,7 @@ unsigned long      StartProcess      = 0;            // Время начала 
 
 #define ON LOW
 #define OFF HIGH
-#define WaterSensor MaxSensors-1
+#define WS MaxSensors-1
 
 void LedOn()
 {
@@ -107,6 +107,8 @@ class Sensor
       int ask()
       {
           val = analogRead(pin);
+          Serial.print("   Sensor.ask() Value: ");
+          Serial.println(val);
           return val;
       }
 };  
@@ -172,15 +174,16 @@ class Plant
 
       void ask()
       {
-          Serial.println("Asking hygrometer...");
-          Serial.println(hygrometer.ask());
+          Serial.println("   Plant.ask() Asking hygrometer...");
+          hygrometer.ask();
       }
 
       void water()
       {
-          if ( sensor[WaterSensor].getVal() <= Alert_WS )                            // Если воды меньше нормы то опрос долива воды
+          Serial.println("STARTING TO WATER... ");
+          if ( sensor[WS].getVal() <= Alert_WS )                            // Если воды меньше нормы то опрос долива воды
           {
-              while (sensor[WaterSensor].getVal() <= Alert_WS)                       
+              while (sensor[WS].getVal() <= Alert_WS)                       
               {
                   Serial.println("NO WATER !");
                   LedOn();
@@ -188,13 +191,12 @@ class Plant
                   Serial.println("ASKING FOR WATER...");
                   digitalWrite(Relay_Sensors, ON);
                   delay(500);
-                  sensor[WaterSensor].ask();
+                  sensor[WS].ask();
                   digitalWrite(Relay_Sensors, OFF);
               }
-              Serial.println("OK WATER, watering... ");
               LedOff();
           }
-              
+          Serial.println("OK WATER, watering... ");    
           digitalWrite(valve,ON);
           Serial.println("VALVE ON");
           digitalWrite(Pump,ON);
@@ -204,7 +206,7 @@ class Plant
            Serial.println("PUMP OFF");
           delay(200);
           digitalWrite(valve,OFF);
-          Serial.println("VALVE OFF");          
+          Serial.println("VALVE OFF");        
       }
                  
 };
@@ -216,7 +218,7 @@ class Plant
 Plant*  flower;                               // Массив цветков
 
 void setup()
-{
+{   
      Serial.begin(9600);                      // Скорость (бит/c) , для отладки
      Serial.setTimeout(100);
      pinMode(Pump,OUTPUT);                    // Устанавливаем пин Pump
@@ -230,7 +232,7 @@ void setup()
      sensor = new Sensor[MaxSensors];
      sensor[0].setPin(HygroMeter_0);                // Гигрометр #1
      sensor[1].setPin(HygroMeter_1);                // Гигрометр #2
-     sensor[WaterSensor].setPin(WaterSensor);      // Сенсор воды
+     sensor[WS].setPin(WaterSensor);                // Сенсор воды
      
 
      flower = new Plant [MaxFlowers];
@@ -245,7 +247,8 @@ void setup()
  
 void loop()
 {
-    Serial.println("Beggining of cycle"); 
+    Serial.println("--Beggining of cycle--"); 
+    
     
     digitalWrite(Pump, OFF);
     digitalWrite(Valve_0, OFF);
@@ -256,17 +259,22 @@ void loop()
 
     digitalWrite(Relay_Sensors, ON);
     Serial.println("SENSORS ON");
+    Serial.println("");
+    
     delay(500);
+    
     for (int i = 0; i < MaxFlowers; i++)
     {
-        Serial.print("FLOWER #");
+        Serial.print("-- FLOWER #");
         Serial.print(i);
         Serial.println(" :");
         flower[i].ask();
+        Serial.println("");
     }
     
-    Serial.println("Water Sensor:");
-    Serial.println(analogRead(WaterSensor));
+    Serial.println("-- Asking WaterSensor...");
+    sensor[WS].ask();
+    Serial.println("");
     digitalWrite(Relay_Sensors, OFF);
     Serial.println("SENSORS OFF");
 
@@ -274,6 +282,12 @@ void loop()
 
     for (int i = 0; i < MaxFlowers; i++)
     {
+        
+        Serial.print("Curr / Alert :");
+        Serial.print(flower[i].getStat());
+        Serial.print(" / ");
+        Serial.println(Alert_HM);
+        
         if (flower[i].getStat() > Alert_HM)
         {
             Serial.print("Beginning of watering FLOWER #");
@@ -291,7 +305,9 @@ void loop()
     digitalWrite(Valve_1, OFF);
     digitalWrite(Relay_Sensors, OFF);
 
-    Serial.println("End of cycle");
+    Serial.println("--End of cycle--");
+    Serial.println("");
+    Serial.println("");
     delay(Cycle);
 }
 
