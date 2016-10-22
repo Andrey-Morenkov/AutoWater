@@ -32,6 +32,9 @@
 
 //-------- Initialization --------
 
+#include <avr/sleep.h>
+#include <avr/power.h>
+#include <avr/interrupt.h>
 
 const unsigned char Valve_0          = 3;            // Клапан #1
 const unsigned char Valve_1          = 4;            // Клапан #2
@@ -251,7 +254,7 @@ void loop()
 {
     Serial.println("--Beggining of cycle--"); 
     
-    
+    // sensors off
     digitalWrite(Pump, OFF);
     digitalWrite(Valve_0, OFF);
     digitalWrite(Valve_1, OFF);
@@ -307,7 +310,7 @@ void loop()
     digitalWrite(Valve_1, OFF);
     digitalWrite(Relay_Sensors, OFF);
 
-    Serial.println("--End of cycle--");
+    Serial.println("--End of cycle, going to sleep--");
     Serial.println("");
     Serial.println("");
     delay(Cycle);
