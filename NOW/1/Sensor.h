@@ -1,6 +1,6 @@
 #pragma once
 
-extern bool IsDev;
+extern bool isDev;
 
 
 //-------------------------------------------------------------SENSOR--------------------------------------------------------------
@@ -47,7 +47,7 @@ class Sensor
 
       int ask()
       {
-        if (!IsDev)
+        if (!isDev)
         {
           val = analogRead(pin);
           Serial.print("   Sensor.ask() Value: ");

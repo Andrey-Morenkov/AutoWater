@@ -37,6 +37,7 @@ const int           maxDevices = maxFlowers + 2;	 // Количество уст
 unsigned long       cycle_time_def = 40;			 // Цикл проверки датчиков ( в сек) // 86400 = 1 сутки
 
 int                 timer_cycle = 8;				 // Цикл таймера в сек
+int					sch_size    = 0;				 // Текущий размер расписания
 
 bool IsDev = false;
 
@@ -289,6 +290,10 @@ void ParceCommand()
 		command += command_fragment;
 	}
 }
+void DoCommand(String _command)
+{
+
+}
 
 void DoDevCommand(String _command)
 {
@@ -369,12 +374,16 @@ void EnterSleep()
 	Serial.println("WakeUp");       // Проснулись
 	delay(80);                      // Ждем пока все проснется
 }
+void PrepareToLongSleep(long o = 0)
+{
+	DevicesOFF();
+}
 
 void ScheduleBuilder()
 {
 	step = 0;
 	CheckSensors();
-	int sch_size = 2;  // в конце идет sleep и delete
+	sch_size = 3;  // в конце идет sleep, prepare и delete
 	for (int i = 0; i < maxFlowers; i++)
 	{
 		if (flower[i].getStat() > alert_HM)
@@ -400,11 +409,13 @@ void ScheduleBuilder()
 			cell++;
 		}
 	}
+	schedule[sch_size - 3].func  = PrepareToLongSleep;
+	schedule[sch_size - 3].param = NULL;
 
-	schedule[sch_size - 2].func = Sleep;
+	schedule[sch_size - 2].func  = Sleep;
 	schedule[sch_size - 2].param = cycle_time_def;
 
-	schedule[sch_size - 1].func = ResetSchedule;
+	schedule[sch_size - 1].func  = ResetSchedule;
 	schedule[sch_size - 1].param = NULL;
 	Serial << "Schedule built" << endl;
 	delay(20);
@@ -413,14 +424,22 @@ void ScheduleBuilder()
 //-------------------------------------------------------------LOOP--------------------------------------------------------------
 void loop()
 {
-	delay(50);
+	delay(100);
 	Serial << "New Loop" << endl;
 	if (wakeup_bt)
 	{
 		wakeup_bt = false;
 		Serial << "Wakeup BT" << endl;
 		ParceCommand();
-		DoDevCommand(command);
+		if (command.charAt(0) == 'd')
+		{
+			DoDevCommand(command);
+		}
+		else
+		{
+			DoCommand(command);
+		}
+		
 	}
 	if (wakeup_timer || next_step)
 	{
@@ -435,7 +454,7 @@ void loop()
 		}
 		Serial << "Step " << step << endl;
 		schedule[step].func(schedule[step].param);
-		step++;
+		step++;												// step указывает не следущую выполненную инструкцию
 		Serial << "/ Step " << step - 1 << endl;
 	}
 	else
@@ -443,81 +462,14 @@ void loop()
 		Serial << "Sleep section" << endl;
 
 		next_step = false;
+		wakeup_timer = false;
 		Serial << cycle << " sec" << endl;
 		Serial << timer_cycle << " timer cycle" << endl;
 		delay(50);
-		// если проснулись по таймеру но не пора ещё,
-		// то спать опять
 		EnterSleep();
 		Serial << "/Sleep section" << endl;
 	}
 	Serial << "/ Loop" << endl;
 }
-//------------------------------------------------------------/LOOP--------------------------------------------------------------
-/* Working
-Serial << "-- Cycle Start --" << endl;
-delay(50);
-
-DevicesOFF();       // на всякий случай принудительно все выключим
-if (!wakeup_timer)
-{
-EnterSleep();
-}
-//----------- СОН -----------
-interrupts();
-Serial << "Cycle = " << cycle << endl;
-if (wakeup_timer)
-{
-Serial << "wakeup from TIMER (" << timer_cycle << " sec)" << endl;
-wakeup_timer = false;
-
-CheckSensors();
-delay(100);
-for (int i = 0; i < maxFlowers; i++)
-{
-Serial << "Curr/Alert: " << flower[i].getStat() << "/" << alert_HM << endl;
-WaterPlant(i);
-}
-DevicesOFF();
-Serial << "-- Cycle End--" << endl;
-Serial << "" << endl;
-Serial << "" << endl;
-}
-
-if (wakeup_bt)
-{
-Serial << "wakeup from BLUETOOTH" << endl;
-wakeup_bt = false;
-
-ParceCommand();
-
-Serial.print("Incoming command: ");
-Serial.println(command);
-
-if (command.startsWith("d"))
-{
-// developer mode
-IsDev = true;
-DoDevCommand(command);
-}
-else
-{
-if (command.toInt() == 1)
-{
-// для теста чекнуть сенсоры
-CheckSensors();
-}
-if (command.toInt() == 2)
-{
-// полить принудительно
-for (int i = 0; i < maxFlowers; i++)
-{
-ForceWater(i);
-}
-}
-DevicesOFF();
-}
-command = "";
-}*/
 //------------------------------------------------------------/LOOP--------------------------------------------------------------
 
