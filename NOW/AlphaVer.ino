@@ -1,3 +1,8 @@
+// Проблемы:
+// - Sleep и BT
+// - Низкая скорость работы (нужны delay)
+
+
 //-------- Initialization --------
 
 #include <Streaming.h>
@@ -29,7 +34,7 @@ const unsigned char HygroMeter_1 = A2;				 // Гигрометр #2
 
 const int           alert_WS = 470;					 // Критическое значение WaterSensor     (0 - сухо, 1024 - мокро)
 const int           alert_HM = 700;					 // Критическое значение HygroMeter      (1024 - сухо, 0 - мокро)
-const int           pumpTime = 16;					 // Время работы Pump       (в с)
+const int           pumpTime = 8;					 // Время работы Pump       (в с)
 const int           maxFlowers = 2;					 // Количество контроллируемых цветков    (сделать динамически через sizeof) !!!!!!!!!!!!!!!!!!!!!!!!
 const int           maxSensors = maxFlowers + 1;	 // Количество сенсоров = кол-во цветков + сенсор воды
 const int           maxDevices = maxFlowers + 2;	 // Количество устройств = кол-во клапанов + помпа + реле сенсоров
@@ -66,14 +71,16 @@ struct schedule_cell
 {
 	schedule_type func;
 	long          param;
+	//String        id;
 };
 schedule_cell *schedule;                           // расписание - массив указателей на структуру
 unsigned char step = 0; // шаг
 
 
-						//--------------------------------
+//--------------------------------
 
 void Timer1_action();
+void DoDevCommand(String _command);
 
 //--------------------------------------------------------------SETUP--------------------------------------------------------------
 void setup()
@@ -204,23 +211,28 @@ void WaterPlant(int _N, int &i)
 {
 	schedule[i].func = ValveON;
 	schedule[i].param = _N;
+	//schedule[i].id = "v";
 
 	schedule[i + 1].func = PumpON;
 	schedule[i + 1].param = NULL;
+	//schedule[i + 1].id = "p";
 
 	schedule[i + 2].func = Sleep;
 	schedule[i + 2].param = pumpTime;
+	//schedule[i + 2].id = "s";
 
 	schedule[i + 3].func = PumpOFF;
 	schedule[i + 3].param = NULL;
+	//schedule[i + 3].id = "/p";
 
 	schedule[i + 4].func = ValveOFF;
 	schedule[i + 4].param = _N;
+	//schedule[i + 4].id = "/v";
 
 	i = i + 4;
 }
 
-void ResetSchedule(long o)
+void ResetSchedule(long o = 0)
 {
 	Serial << "ResetSchedule" << endl;
 	delete[] schedule;
@@ -251,7 +263,7 @@ void CheckSensors()
 		Serial.println("");
 	}
 
-	Serial.println("-- Asking WaterSensor...");
+	Serial.println("-- WS");
 	sensor[WS].ask();
 	Serial.println("");
 	digitalWrite(relay_Sensors, OFF);
@@ -259,24 +271,25 @@ void CheckSensors()
 
 }
 
-void ForceWater(int N)
-{
-	Serial << "    Beginning of watering FLOWER # " << N << " :" << endl;
-	flower[N].water();
-	Serial << "    End of watering FLOWER # " << N << endl;
-}
+// OLD
+//void ForceWater(int N)
+//{
+//	Serial << "    Beginning of watering FLOWER # " << N << " :" << endl;
+//	flower[N].water();
+//	Serial << "    End of watering FLOWER # " << N << endl;
+//}
 
-void WaterPlant(int N)
-{
-	if (flower[N].getStat() > alert_HM)
-	{
-		ForceWater(N);
-	}
-	else
-	{
-		Serial << "    Don't need to water" << endl;
-	}
-}
+//void WaterPlant(int N)
+//{
+//	if (flower[N].getStat() > alert_HM)
+//	{
+//		ForceWater(N);
+//	}
+//	else
+//	{
+//		Serial << "    Don't need to water" << endl;
+//	}
+//}
 
 
 
@@ -290,9 +303,112 @@ void ParceCommand()
 		command += command_fragment;
 	}
 }
+void PrepareToLongSleep(long o = 0)
+{
+	DevicesOFF();
+	next_step = true;
+}
+void CalculateScheduleSize()
+{
+	sch_size = 3;  // в конце идет sleep, prepare и delete
+	CheckSensors();
+	for (int i = 0; i < maxFlowers; i++)
+	{
+		if (flower[i].getStat() > alert_HM)
+		{
+			sch_size += 5;
+			Serial << "The flower " << i << " needs watering" << endl;
+			delay(20);
+		}
+		else
+		{
+			Serial << "The flower " << i << " does not need watering" << endl;
+			delay(20);
+		}
+	}
+}
+void ScheduleBuilder(String mode = "default", int plant = -1)
+{
+	step = 0;
+
+	if (mode == "default")
+	{
+		Serial << "default mode" << endl;
+		CalculateScheduleSize();
+		Serial << "sch size = " << sch_size << endl;
+
+		schedule = new schedule_cell[sch_size];
+		int cell = 0;
+		for (int N = 0; N < maxFlowers; N++)
+		{
+			if (flower[N].getStat() > alert_HM)
+			{
+				WaterPlant(N, cell);
+				cell++;
+			}
+		}
+		schedule[sch_size - 3].func = PrepareToLongSleep;
+		schedule[sch_size - 3].param = NULL;
+
+		schedule[sch_size - 2].func = Sleep;
+		schedule[sch_size - 2].param = cycle_time_def;
+
+		schedule[sch_size - 1].func = ResetSchedule;
+		schedule[sch_size - 1].param = NULL;
+		Serial << "Schedule built" << endl;
+	}
+	if (mode == "custom")
+	{
+		Serial << "custom mode" << endl;
+		DevicesOFF();
+		ResetSchedule();
+		Serial << "Deleted OLD schedule" << endl;
+		sch_size = 6;
+		int cell = 0;
+
+		schedule = new schedule_cell[sch_size];
+		WaterPlant(plant, cell);
+		schedule[sch_size - 1].func = ResetSchedule;
+		schedule[sch_size - 1].param = NULL;
+		next_step = true;
+	}
+
+	delay(20);
+}
+
 void DoCommand(String _command)
 {
+	if (command.charAt(0) == 'd')
+	{
+		// dp0s100 = flower 0 set 100
+		DoDevCommand(command);
+	}
+	else
+	{
+		if (command.charAt(0) == 'w')
+		{
+			CheckSensors();
+			// wp1 = water plant 1
+			int plantNumber = command.substring(command.indexOf("p") + 1).toInt();
+			if (flower[plantNumber].getStat() < alert_HM)
+			{
+				// отправить ответ, что поливать не нужно
+				Serial << "Don't need watering plant # "<< plantNumber << endl;
+			}
+			else
+			{
+				Serial << "Begin to custom watering plant # " << plantNumber << endl;
+				ScheduleBuilder("custom", plantNumber);
+			}
+		}
+		if (command.charAt(0) == 'f')
+		{
+			int plantNumber = command.substring(command.indexOf("p") + 1).toInt();
+			Serial << "Begin to custom FORCED watering plant # " << plantNumber << endl;
+			ScheduleBuilder("custom", plantNumber);
+		}
 
+	}
 }
 
 void DoDevCommand(String _command)
@@ -310,9 +426,9 @@ void DoDevCommand(String _command)
 		Serial.print("Val = ");
 		Serial.println(Vald);
 
-		if (_command.charAt(1) == 'f')
+		if (_command.charAt(1) == 'p')
 		{
-			Serial.print("Target: flower ");
+			Serial.print("Target: plant ");
 			Serial.println(_command.charAt(2));
 			flower[_command.charAt(2) - '0'].setVal(Vald);
 			flower[_command.charAt(2) - '0'].ask();
@@ -372,90 +488,37 @@ void EnterSleep()
 	detachInterrupt(INT0);          // Отключаем прерывания по BT
 
 	Serial.println("WakeUp");       // Проснулись
-	delay(80);                      // Ждем пока все проснется
-}
-void PrepareToLongSleep(long o = 0)
-{
-	DevicesOFF();
-}
-
-void ScheduleBuilder()
-{
-	step = 0;
-	CheckSensors();
-	sch_size = 3;  // в конце идет sleep, prepare и delete
-	for (int i = 0; i < maxFlowers; i++)
-	{
-		if (flower[i].getStat() > alert_HM)
-		{
-			sch_size += 5;
-			Serial << "The flower " << i << " needs watering" << endl;
-			delay(20);
-		}
-		else
-		{
-			Serial << "The flower " << i << " does not need watering" << endl;
-			delay(20);
-		}
-	}
-	Serial << "sch size = " << sch_size << endl;
-	schedule = new schedule_cell[sch_size];
-	int cell = 0;
-	for (int N = 0; N < maxFlowers; N++)
-	{
-		if (flower[N].getStat() > alert_HM)
-		{
-			WaterPlant(N, cell);
-			cell++;
-		}
-	}
-	schedule[sch_size - 3].func  = PrepareToLongSleep;
-	schedule[sch_size - 3].param = NULL;
-
-	schedule[sch_size - 2].func  = Sleep;
-	schedule[sch_size - 2].param = cycle_time_def;
-
-	schedule[sch_size - 1].func  = ResetSchedule;
-	schedule[sch_size - 1].param = NULL;
-	Serial << "Schedule built" << endl;
-	delay(20);
+	delay(80);                     // Ждем пока все проснется
 }
 
 //-------------------------------------------------------------LOOP--------------------------------------------------------------
 void loop()
 {
-	delay(100);
 	Serial << "New Loop" << endl;
 	if (wakeup_bt)
 	{
 		wakeup_bt = false;
 		Serial << "Wakeup BT" << endl;
 		ParceCommand();
-		if (command.charAt(0) == 'd')
-		{
-			DoDevCommand(command);
-		}
-		else
-		{
-			DoCommand(command);
-		}
-		
+		DoCommand(command);	
 	}
 	if (wakeup_timer || next_step)
 	{
-		Serial << "Wakeup TIMER / NEXT STEP" << endl;
-
 		next_step = false;
 		wakeup_timer = false;
+
+		Serial << "Wakeup TIMER / NEXT STEP" << endl;
+
 		if (schedule == nullptr)
 		{
 			Serial << "No schedule" << endl;
 			ScheduleBuilder();
 		}
-		Serial << "Step " << step << endl;
+
+		Serial << "Step # " << step << endl;
 		schedule[step].func(schedule[step].param);
 		step++;												// step указывает не следущую выполненную инструкцию
-		Serial << "/ Step " << step - 1 << endl;
+		Serial << "/ Step # " << step - 1 << endl;
 	}
 	else
 	{
@@ -463,10 +526,22 @@ void loop()
 
 		next_step = false;
 		wakeup_timer = false;
+
 		Serial << cycle << " sec" << endl;
 		Serial << timer_cycle << " timer cycle" << endl;
-		delay(50);
-		EnterSleep();
+		delay(100);
+
+		if (Serial.available > 0)
+		{
+			wakeup_bt = true;
+		}
+		else
+		{
+			// если в BT ничего нет то идем спать
+			EnterSleep();
+			attachInterrupt(INT0, BT_Action, LOW);
+		}				
+
 		Serial << "/Sleep section" << endl;
 	}
 	Serial << "/ Loop" << endl;
