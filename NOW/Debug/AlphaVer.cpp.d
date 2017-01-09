@@ -14,6 +14,8 @@ C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\Al
  C:\Program\ Files\ (x86)\Arduino\libraries\Streaming/Streaming.h \
  C:\Program\ Files\ (x86)\Arduino\hardware\arduino\avr\cores\arduino/Arduino.h \
  C:\Program\ Files\ (x86)\Arduino\libraries\TimerOne-r11/TimerOne.h \
+ C:\Program\ Files\ (x86)\Arduino\hardware\arduino\avr\libraries\EEPROM\src/eeprom.h \
+ C:\Program\ Files\ (x86)\Arduino\libraries/LinkedList\LinkedList.h \
  C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\Sensor.h \
  C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\Plant.h \
- C:\Program\ Files\ (x86)\Microsoft\ Visual\ Studio\ 14.0\Common7\IDE\Extensions\rncsolvp.vfd\Micro\ Platforms\default\debuggers\VM_DBG/VM_DBG.h
+ C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\EEPROMcell.h

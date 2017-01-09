@@ -2,6 +2,8 @@
 // - Sleep и BT
 // - Низкая скорость работы (нужны delay)
 
+//WaterSensor(0 - сухо, 1024 - мокро)
+//HygroMeter      (1024 - сухо, 0 - мокро)
 
 //-------- Initialization --------
 
@@ -11,35 +13,29 @@
 #include <avr/power.h>
 #include <avr/interrupt.h>
 #include <stdio.h>
+#include <eeprom.h>
+#include <LinkedList\LinkedList.h>
 
 #include "Sensor.h"
 #include "Plant.h"
+#include "EEPROMcell.h"
 
-// цифровые
-unsigned char       *device;                         // Массив цифровых устройств
-int                 interrupt_pin = 2;				 // Порт прерываний 
-const unsigned char valves[] = { 3,4 };
-const unsigned char Valve_0 = 3;					 // Клапан #1
-const unsigned char Valve_1 = 4;				     // Клапан #2
-const unsigned char pump = 5;						 // Помпа
-const unsigned char relay_Sensors = 10;              // Сенсоры
-													 //
+//	Hardcoded Пины 
+int                 interrupt_pin = 2;				// Порт прерываний 
+byte				pump = 5;						// Помпа
+byte				relay_Sensors = 10;             // Сенсоры
+byte				waterSensor   = A0;				// Сенсор уровня воды
+//
 
-													 // аналоговые
-const unsigned char waterSensor = A0;				 // Сенсор уровня воды
-const unsigned char hygrometers[] = { A1,A2 };
-const unsigned char HygroMeter_0 = A1;				 // Гигрометр #1
-const unsigned char HygroMeter_1 = A2;				 // Гигрометр #2
-													 //
+LinkedList <byte>	*devices;                         // Массив пинов цифровых устройств (Помпа, реле сенсоров + клапаны)
+LinkedList <Sensor> *sensors;						 // Массив сенсоров (Гигрометры + WaterSensor)
+LinkedList <Plant>  *flowers;						 // Массив цветков
 
-const int           alert_WS = 470;					 // Критическое значение WaterSensor     (0 - сухо, 1024 - мокро)
-const int           alert_HM = 700;					 // Критическое значение HygroMeter      (1024 - сухо, 0 - мокро)
+byte                flowers_count = 255;			 // Сколько подключенных цветков (255 == 0)
+
 const int           pumpTime = 8;					 // Время работы Pump       (в с)
-const int           maxFlowers = 2;					 // Количество контроллируемых цветков    (сделать динамически через sizeof) !!!!!!!!!!!!!!!!!!!!!!!!
-const int           maxSensors = maxFlowers + 1;	 // Количество сенсоров = кол-во цветков + сенсор воды
-const int           maxDevices = maxFlowers + 2;	 // Количество устройств = кол-во клапанов + помпа + реле сенсоров
 
-unsigned long       cycle_time_def = 40;			 // Цикл проверки датчиков ( в сек) // 86400 = 1 сутки
+unsigned long       cycle_time_def = 32;			 // Цикл проверки датчиков ( в сек) // 86400 = 1 сутки
 
 int                 timer_cycle = 8;				 // Цикл таймера в сек
 int					sch_size    = 0;				 // Текущий размер расписания
@@ -54,17 +50,11 @@ String command = "";
 
 bool  next_step = false;
 volatile bool  wakeup_timer = false;
-volatile bool  wakeup_bt = false;
+volatile bool  wakeup_ex = false;
 volatile long  cycle = cycle_time_def;   // Тут будем декрементить
 
 #define ON  LOW
-#define OFF HIGH
-#define WS  maxSensors-1
-#define PMP maxDevices-2
-#define RS  maxDevices-1
-
-Sensor* sensor;                               // Массив сенсоров
-Plant*  flower;                               // Массив цветков
+#define OFF HIGH                          
 
 typedef void(*schedule_type)(long);                      // новый тип - указатель на функцию
 struct schedule_cell
@@ -76,60 +66,203 @@ struct schedule_cell
 schedule_cell *schedule;                           // расписание - массив указателей на структуру
 unsigned char step = 0; // шаг
 
-
-//--------------------------------
-
 void Timer1_action();
 void DoDevCommand(String _command);
+
+//--------------------------------
+struct EEPROMcell
+{
+public:
+
+	byte  id;		 // id цветка
+	char  name[11];  // имя цветка (10 символов макс)
+	byte  valve_pin; // пин клапана
+	byte  hygro_pin; // пин гигрометра
+	int   crit_wet;  // критическая влажность
+
+	EEPROMcell()
+	{
+	}
+
+	EEPROMcell(const Plant& _plant)
+	{
+		id = _plant.getId();
+		String tmpname = _plant.getName();
+		for (int i = 0; i < 11; i++)
+		{
+			name[i] = tmpname[i];
+		}
+		valve_pin = _plant.getValve();
+		hygro_pin = _plant.getHygrometer().getPin();
+		crit_wet = _plant.getCritWet();
+	}
+
+	EEPROMcell(byte _id, char _name[], byte _valve_pin, byte _hygro_pin, int _crit_wet)
+	{
+		id = _id;
+		for (int i = 0; i < 11; i++)
+		{
+			name[i] = _name[i];
+		}
+		valve_pin = _valve_pin;
+		hygro_pin = _hygro_pin;
+		crit_wet = _crit_wet;
+	}
+};
+
+Plant PlantFromEEPROMcell(struct EEPROMcell _cell)
+{
+	Plant tmpPlant;
+	tmpPlant.setId(_cell.id);
+	String tmpName;
+	for (int i = 0; i < 11; i++)
+	{
+		tmpName[i] = _cell.name[i];
+	}
+	tmpPlant.setName(tmpName);
+	tmpPlant.setValve(_cell.valve_pin);
+	tmpPlant.setHygrometer(_cell.hygro_pin);
+	tmpPlant.setCritWet(_cell.crit_wet);
+	pinMode(tmpPlant.getValve(), OUTPUT);
+	return tmpPlant;
+}
 
 //--------------------------------------------------------------SETUP--------------------------------------------------------------
 void setup()
 {
-	Serial.begin(9600);                      // Скорость (бит/c) , для отладки
+	Serial.begin(115200);                    // Скорость (бит/c) , для отладки
 	Serial.setTimeout(80);
-	pinMode(pump, OUTPUT);                    // Устанавливаем пин Pump
-	pinMode(relay_Sensors, OUTPUT);          // Устанавливаем пин датчиков
+	pinMode(pump, OUTPUT);                   // Устанавливаем пин Pump
+	pinMode(relay_Sensors, OUTPUT);          // Устанавливаем пин реле датчиков
 
-	device = new unsigned char[maxDevices];  // массив для цифровых девайсов
-	for (int i = 0; i < maxFlowers; i++)
-		device[i] = valves[i];
-	device[PMP] = pump;
-	device[RS] = relay_Sensors;
+	devices = new LinkedList<byte>();		 // Цифровые устройства
+	sensors = new LinkedList<Sensor>();		 // Сенсоры
+	flowers = new LinkedList<Plant>();		 // Цветы
 
-	DevicesOFF();
+	beginSetup();
 
-	sensor = new Sensor[maxSensors];
-	for (int i = 0; i < maxFlowers; i++)
-		sensor[i].setPin(hygrometers[i]);
-	sensor[WS].setPin(waterSensor);                // Сенсор воды
-
-
-	flower = new Plant[maxFlowers];
-	for (int i = 0; i < maxFlowers; i++)
-		flower[i].setParams(valves[i], sensor[i]);
-
-	for (int i = 0; i < maxFlowers; i++)
-	{
-		// инициализация цветков
-		flower[i].init();
-	}
+	loadEEPROMdata();
 
 	pinMode(interrupt_pin, INPUT);                  // порт прерывания как выход
-
 	set_sleep_mode(SLEEP_MODE_IDLE);                // Определяем режим сна
 
 	cycle = cycle_time_def;
-	Timer1.initialize(timer_cycle * 1000000);       // x сек
+	Timer1.initialize(timer_cycle * 1000000);       // timer_cycle сек
 	Timer1.attachInterrupt(Timer1_action);          // прерывание на таймере должно быть всегда
 
-	IsDev = true; // пока работаем в дев моде всегда
+	IsDev = false; 
 	schedule = nullptr;
 	next_step = true;
 	step = 0;
 
+	// flowers - массив считанных цветков
+	// devices - массив клапанов + помпа + реле ( чтобы все отключить)
+	// sensors - массив water_sensor + гигрометры
+
 	Serial.println("Initialisation complete.");
 }
 //-------------------------------------------------------------/SETUP--------------------------------------------------------------
+void beginSetup()
+{
+	flowers_count = 0;
+	DevicesOFF();
+	devices->clear();
+	sensors->clear();
+	flowers->clear();
+
+	devices->add(pump);
+	devices->add(relay_Sensors);
+	sensors->add(waterSensor);
+}
+
+void loadEEPROMdata()
+{
+	flowers_count = EEPROM.read(0);				 // Узнаем кол-во сохраненных цветков
+	flowers->clear();
+	if (flowers_count == 255)
+	{
+		flowers_count = 0;
+	}
+	int local_flowers = flowers_count;
+	for (int i = 1; ((i < EEPROM.length()) && (local_flowers > 0)); i += sizeof(EEPROMcell))
+	{
+		if (EEPROM.read(i) != 255)
+		{
+			EEPROMcell memoryCell;
+			EEPROM.get(1 + i * sizeof(EEPROMcell), memoryCell);
+			Plant newPlant;
+			newPlant = PlantFromEEPROMcell(memoryCell);
+			newPlant.init();
+			flowers->add(newPlant);
+			devices->add(newPlant.getValve());
+			sensors->add(newPlant.getHygrometer());
+			local_flowers--;
+		}
+	}
+	DevicesOFF();
+}
+
+void eraseEEPROM()
+{
+	for (int i = 0; i < EEPROM.length(); i++)
+	{
+		EEPROM.update(i, 255);
+	}
+}
+
+void addNewFlower(Plant _newFlower)
+{
+	// обновим запись в памяти о количестве цветков
+	flowers_count = EEPROM.read(0);
+	if (flowers_count == 255)
+	{
+		flowers_count = 1;
+	}
+	else
+	{
+		flowers_count++;
+	}
+	EEPROM.write(0,flowers_count); 
+
+	// запишем цветок в первую свободную ячейку
+	for (int i = 1; i < EEPROM.length(); i += sizeof(EEPROMcell))
+	{
+		if (EEPROM[i] == 255)
+		{
+			EEPROMcell newCell = _newFlower;
+			EEPROM.put(i, newCell);
+			break;
+		}
+	}
+
+	// добавим цветок
+	_newFlower.init();
+	flowers->add(_newFlower);
+	devices->add(_newFlower.getValve());
+	sensors->add(_newFlower.getHygrometer());	
+}
+
+void removeFlower(int id)
+{
+	flowers_count = EEPROM.read(0);
+	if (flowers_count == 1)
+	{
+		flowers_count = 255;
+	}
+	else
+	{
+		flowers_count--;
+	}
+	EEPROM.write(0, flowers_count);
+
+	for (int i = 1; i < EEPROM.length(); i += sizeof(EEPROMcell))
+	{
+		if (EEPROM[i] == id)
+		{
+			EEPROM.write(i, 255);
+		}
+	}
+}
 
 void LedOn()
 {
@@ -141,10 +274,34 @@ void LedOff()
 	digitalWrite(13, LOW);
 }
 
+int devicesFoundPosition(byte obj)
+{
+	for (int i = 0; i < devices->size(); i++)
+	{
+		if (devices->get(i) == obj)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+int sensorsFoundPosition(byte pin)
+{
+	for (int i = 0; i < sensors->size(); i++)
+	{
+		if (sensors->get(i).getPin() == pin)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
 void ValveON(long N)
 {
 	Serial << "ValveOn" << endl;
-	digitalWrite(valves[(int)N], ON);
+	digitalWrite(devices->get(devicesFoundPosition((byte)N)), ON);
 	next_step = true;
 }
 void PumpON(long N)
@@ -156,7 +313,7 @@ void PumpON(long N)
 void ValveOFF(long N)
 {
 	Serial << "ValveOFF" << endl;
-	digitalWrite(valves[(int)N], OFF);
+	digitalWrite(devices->get(devicesFoundPosition((byte)N)), OFF);
 	next_step = true;
 }
 void PumpOFF(long N)
@@ -166,45 +323,15 @@ void PumpOFF(long N)
 	next_step = true;
 }
 
-int Multiple(long first, long second)
-{
-	return ((first / second)*second - first);
-}
-
 void Sleep(long sec = cycle_time_def)
 {
+	next_step = false;
 	Serial << "Sleep" << endl;
 	Serial << "sec = " << sec << endl;
 	Serial << "tim_cycle = " << timer_cycle << endl;
-	/*	int delta = Multiple(sec, (long)timer_cycle);
-	if (delta != 0)
-	{
-	Serial << "Not optimal timer_cycle = " << timer_cycle << endl;
-	Serial << "delta = " << delta << " sec" << endl;
 
-	// тут ищем такое значение цикла, при котором разница
-	// между sec и возможностями таймера минимальна
-	int optimal_cycle = timer_cycle;
-	int k;
-	for (int i = 2; i <= 8; i++)
-	{
-	k = Multiple(sec, (long)i);
-	if (k <= delta)
-	{
-	delta = k;
-	optimal_cycle = i;
-	}
-
-	}
-	timer_cycle = optimal_cycle;
-	Serial << "Found optimal timer_cycle = " << timer_cycle << endl;
-	Serial << "delta = " << delta << " sec" << endl;
-	}
-	*/
 	cycle = sec;
 	wakeup_timer = false;
-	//Timer1.setPeriod(timer_cycle * 1000000);
-	//Timer1.restart();
 }
 
 void WaterPlant(int _N, int &i)
@@ -242,65 +369,48 @@ void ResetSchedule(long o = 0)
 
 void DevicesOFF()
 {
-	for (int i = 0; i < maxDevices; i++)
+	for (int i = 0; i < devices->size(); i++)
 	{
-		digitalWrite(device[i], OFF);
+		digitalWrite(devices->get(i), OFF);
 	}
 }
 
 void CheckSensors()
 {
-	digitalWrite(relay_Sensors, ON);
-	Serial.println("SENSORS ON");
-	Serial.println("");
-
-	for (int i = 0; i < maxFlowers; i++)
+	if (flowers->size() > 0)
 	{
-		Serial.print("-- FLOWER #");
-		Serial.print(i);
-		Serial.println(" :");
-		flower[i].ask();
+		digitalWrite(relay_Sensors, ON);
+		Serial.println("SENSORS ON");
 		Serial.println("");
+		delay(10);
+
+		for (int i = 0; i < flowers->size(); i++)
+		{
+			Serial << "-- FLOWER # " << i << " : ";
+			flowers->get(i).ask();
+			Serial.println("");
+		}
+
+		Serial.println("-- WS :");
+		Serial.println(sensors->get(sensorsFoundPosition(waterSensor)).ask());
+		Serial.println("");
+		delay(10);
+		digitalWrite(relay_Sensors, OFF);
+		Serial.println("SENSORS OFF");
 	}
-
-	Serial.println("-- WS");
-	sensor[WS].ask();
-	Serial.println("");
-	digitalWrite(relay_Sensors, OFF);
-	Serial.println("SENSORS OFF");
-
 }
-
-// OLD
-//void ForceWater(int N)
-//{
-//	Serial << "    Beginning of watering FLOWER # " << N << " :" << endl;
-//	flower[N].water();
-//	Serial << "    End of watering FLOWER # " << N << endl;
-//}
-
-//void WaterPlant(int N)
-//{
-//	if (flower[N].getStat() > alert_HM)
-//	{
-//		ForceWater(N);
-//	}
-//	else
-//	{
-//		Serial << "    Don't need to water" << endl;
-//	}
-//}
-
-
 
 void ParceCommand()
 {
 	command = "";
-	while (Serial.available() > 0)
+	while (command[command.length()-1] != ';')
 	{
-		// пока в буфере есть данные, записываем их в строку
-		command_fragment = Serial.read();
-		command += command_fragment;
+		// команда это строка до ;
+		if (Serial.available() > 0)
+		{
+			command_fragment = Serial.read();
+			command += command_fragment;
+		}
 	}
 }
 void PrepareToLongSleep(long o = 0)
@@ -311,10 +421,11 @@ void PrepareToLongSleep(long o = 0)
 void CalculateScheduleSize()
 {
 	sch_size = 3;  // в конце идет sleep, prepare и delete
+	
 	CheckSensors();
-	for (int i = 0; i < maxFlowers; i++)
+	for (int i = 0; i < flowers->size(); i++)
 	{
-		if (flower[i].getStat() > alert_HM)
+		if (flowers->get(i).getStat() > flowers->get(i).getCritWet())
 		{
 			sch_size += 5;
 			Serial << "The flower " << i << " needs watering" << endl;
@@ -327,6 +438,21 @@ void CalculateScheduleSize()
 		}
 	}
 }
+
+void CalculateCustomSceduleSize(int need_water_count = -1)
+{
+	// -1 => water all
+	sch_size = 1; // в конце delete
+	if (need_water_count == -1)
+	{
+		sch_size += flowers->size() * 5;
+	}
+	else
+	{
+		sch_size += need_water_count * 5;
+	}
+}
+
 void ScheduleBuilder(String mode = "default", int plant = -1)
 {
 	step = 0;
@@ -335,13 +461,14 @@ void ScheduleBuilder(String mode = "default", int plant = -1)
 	{
 		Serial << "default mode" << endl;
 		CalculateScheduleSize();
+		Serial << "flowers size = " << flowers->size() << endl;
 		Serial << "sch size = " << sch_size << endl;
 
 		schedule = new schedule_cell[sch_size];
 		int cell = 0;
-		for (int N = 0; N < maxFlowers; N++)
+		for (int N = 0; N < flowers->size(); N++)
 		{
-			if (flower[N].getStat() > alert_HM)
+			if (flowers->get(N).getStat() > flowers->get(N).getCritWet())
 			{
 				WaterPlant(N, cell);
 				cell++;
@@ -355,15 +482,14 @@ void ScheduleBuilder(String mode = "default", int plant = -1)
 
 		schedule[sch_size - 1].func = ResetSchedule;
 		schedule[sch_size - 1].param = NULL;
-		Serial << "Schedule built" << endl;
 	}
-	if (mode == "custom")
+	if (mode == "water_plant")
 	{
-		Serial << "custom mode" << endl;
+		Serial << "water_plant mode" << endl;
 		DevicesOFF();
 		ResetSchedule();
 		Serial << "Deleted OLD schedule" << endl;
-		sch_size = 6;
+		CalculateCustomSceduleSize(1);
 		int cell = 0;
 
 		schedule = new schedule_cell[sch_size];
@@ -372,47 +498,198 @@ void ScheduleBuilder(String mode = "default", int plant = -1)
 		schedule[sch_size - 1].param = NULL;
 		next_step = true;
 	}
+	if (mode == "water_all_if_need")
+	{
+		CalculateCustomSceduleSize();
+		Serial << "sch size = " << sch_size << endl;
 
+		schedule = new schedule_cell[sch_size];
+		int cell = 0;
+		for (int N = 0; N < flowers->size(); N++)
+		{
+			if (flowers->get(N).getStat() > flowers->get(N).getCritWet())
+			{
+				WaterPlant(N, cell);
+				cell++;
+			}
+		}
+
+		schedule[sch_size - 1].func = ResetSchedule;
+		schedule[sch_size - 1].param = NULL;
+		next_step = true;
+	}
+
+	if (mode == "water_all_force")
+	{
+		Serial << "water_all_force mode" << endl;
+		DevicesOFF();
+		ResetSchedule();
+		Serial << "Deleted OLD schedule" << endl;
+		CalculateCustomSceduleSize();
+		int cell = 0;
+
+		schedule = new schedule_cell[sch_size];
+		for (int N = 0; N < flowers->size(); N++)
+		{
+			WaterPlant(N, cell);
+			cell++;
+		}
+		schedule[sch_size - 1].func = ResetSchedule;
+		schedule[sch_size - 1].param = NULL;
+		next_step = true;
+	}
+
+	Serial << "Schedule built" << endl;
 	delay(20);
 }
 
 void DoCommand(String _command)
 {
-	if (command.charAt(0) == 'd')
+	switch (_command.charAt(0))
 	{
-		// dp0s100 = flower 0 set 100
-		DoDevCommand(command);
+	
+	case 'd' :
+	{
+		DoDevCommand(_command);
+		break;
 	}
-	else
-	{
-		if (command.charAt(0) == 'w')
-		{
-			CheckSensors();
-			// wp1 = water plant 1
-			int plantNumber = command.substring(command.indexOf("p") + 1).toInt();
-			if (flower[plantNumber].getStat() < alert_HM)
-			{
-				// отправить ответ, что поливать не нужно
-				Serial << "Don't need watering plant # "<< plantNumber << endl;
-			}
-			else
-			{
-				Serial << "Begin to custom watering plant # " << plantNumber << endl;
-				ScheduleBuilder("custom", plantNumber);
-			}
-		}
-		if (command.charAt(0) == 'f')
-		{
-			int plantNumber = command.substring(command.indexOf("p") + 1).toInt();
-			Serial << "Begin to custom FORCED watering plant # " << plantNumber << endl;
-			ScheduleBuilder("custom", plantNumber);
-		}
 
+	case 'w' :
+	{
+		// полить что-то
+		switch (_command.charAt(1))
+		{
+		case 'f' :
+		{
+			// полить все принудительно
+			ScheduleBuilder("water_all_force");
+			break;
+		}
+		case ';' :
+		{
+			// полить все, если необходимо
+			ScheduleBuilder("water_all_if_need");
+			break;
+		}
+		default:
+			// полить конкретный цветок
+			byte flowerNumber = _command.substring(1,_command.length()).toInt();
+			ScheduleBuilder("water_plant", flowerNumber);
+			break;
+		}
+		break;
+	}
+	case 'c' :
+	{
+		// проверить что-то
+		CheckSensors();
+		if (_command.charAt(1) == ';')
+		{
+			// отправка значений всех сенсоров
+		}
+		else
+		{
+			// отправить значение конкретного цветка
+		}
+		break;
+	}
+
+	case 'r' :
+	{
+		// удалить что-то
+
+		if (_command.charAt(1) == ';')
+		{
+			// стереть все данные
+			beginSetup();    // стираем все массивы
+			eraseEEPROM();   // стираем всю память
+			ResetSchedule(); // обновим расписание
+			Serial << _command;
+		}
+		else
+		{
+			// стереть конкретный цветок
+			//byte id = _command.substring(1).toInt;
+
+		}
+		break;
+	}
+	case 'u' :
+	{
+		// получить список цветков
+		for (int i = 0; i < flowers->size(); i++)
+		{
+			String cmd = "f" + (String)flowers->get(i).getId() + ":" + (String)flowers->get(i).getName() + ":" + (String)flowers->get(i).getValve() + ":" + (String)flowers->get(i).getHygrometer().getPin() + ":" + (String)flowers->get(i).getCritWet() + ";";
+			Serial << cmd;
+		}
+		Serial << "f;";
+		break;
+	}
+
+	case 'f' :
+	{
+		// пришел новый цветок
+		Plant newFlower;
+
+		String clearCommand = _command.substring(1);
+		int n = 0;
+		int iter = 0;
+		int pos = clearCommand.indexOf(':', n);
+		
+		
+		while (pos != -1)
+		{
+			switch (iter)
+			{
+			case 0:
+			{
+				newFlower.setId(clearCommand.substring(n, pos).toInt());
+				n = pos+1;
+				iter++;
+				break;
+			}
+			case 1:
+			{
+				newFlower.setName(clearCommand.substring(n, pos));
+				n = pos + 1;
+				iter++;
+				break;
+			}
+			case 2:
+			{
+				newFlower.setValve(clearCommand.substring(n, pos).toInt());
+				n = pos + 1;
+				iter++;
+				break;
+			}
+			case 3:
+			{
+				newFlower.setHygrometer(clearCommand.substring(n, pos).toInt());
+				n = pos + 1;
+				iter++;
+				break;
+			}
+			}
+			pos = clearCommand.indexOf(':', n);
+		}
+		pos = clearCommand.indexOf(';', n);
+		newFlower.setCritWet(clearCommand.substring(n, pos).toInt());
+
+		addNewFlower(newFlower);
+		ResetSchedule();
+		Serial << _command; // отправить назад телефону
+		break;
+	}
+
+	default:
+		// хз что пришло
+		break;
 	}
 }
 
 void DoDevCommand(String _command)
 {
+	/*
 	int Vald;
 
 	if (_command.charAt(1) == '0')
@@ -441,7 +718,7 @@ void DoDevCommand(String _command)
 		}
 		Serial.println("DevMode ON");
 		Serial.println("Print d0 to OFF");
-	}
+	}*/
 }
 
 
@@ -455,15 +732,15 @@ void Timer1_action()
 	}
 }
 
-void BT_Action()
+void EX_Action()
 {
-	wakeup_bt = true;
+	wakeup_ex = true;
 }
 
 void EnterSleep()
 {
 	sleep_enable();                                  //Разрешаем спящий режим
-	attachInterrupt(INT0, BT_Action, LOW);  //Если на 0-вом прерываниии - ноль, то просыпаемся.
+	attachInterrupt(INT0, EX_Action, LOW);  //Если на 0-вом прерываниии - ноль, то просыпаемся.
 
 											// выключаем ненужные модули
 	power_adc_disable();
@@ -495,10 +772,10 @@ void EnterSleep()
 void loop()
 {
 	Serial << "New Loop" << endl;
-	if (wakeup_bt)
+	if (wakeup_ex)
 	{
-		wakeup_bt = false;
-		Serial << "Wakeup BT" << endl;
+		wakeup_ex = false;
+		Serial << "Wakeup EX" << endl;
 		ParceCommand();
 		DoCommand(command);	
 	}
@@ -517,7 +794,7 @@ void loop()
 
 		Serial << "Step # " << step << endl;
 		schedule[step].func(schedule[step].param);
-		step++;												// step указывает не следущую выполненную инструкцию
+		step++;												// step указывает на следущую выполненную инструкцию
 		Serial << "/ Step # " << step - 1 << endl;
 	}
 	else
@@ -531,17 +808,16 @@ void loop()
 		Serial << timer_cycle << " timer cycle" << endl;
 		delay(100);
 
-		if (Serial.available > 0)
+		if (Serial.available() > 0)
 		{
-			wakeup_bt = true;
+			wakeup_ex = true;
 		}
 		else
 		{
-			// если в BT ничего нет то идем спать
+			// если в EX ничего нет то идем спать
 			EnterSleep();
-			attachInterrupt(INT0, BT_Action, LOW);
-		}				
-
+			attachInterrupt(INT0, EX_Action, LOW);
+		}
 		Serial << "/Sleep section" << endl;
 	}
 	Serial << "/ Loop" << endl;

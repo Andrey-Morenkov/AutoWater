@@ -1,0 +1,25 @@
+if ( sensor[WS].getVal() <= alert_WS )                            // если у WS меньше чем Alert то воды нет!
+          {
+			  bool blink = true;
+              while (sensor[WS].getVal() <= alert_WS)                       
+              {
+                  Serial.println("NO WATER !");
+				  if (blink)
+				  {
+					  LedOn();
+				  }
+				  else
+				  {
+					  LedOff();
+				  }
+				  blink = !blink;					  
+                  
+                  delay(2000);
+                  Serial.println("ASKING FOR WATER...");
+                  digitalWrite(relay_Sensors, ON);
+                  delay(500);
+                  sensor[WS].ask();
+                  digitalWrite(relay_Sensors, OFF);
+              }
+              LedOff();
+          }

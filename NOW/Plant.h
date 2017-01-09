@@ -3,15 +3,11 @@
 #include "Sensor.h"
 
 extern const int maxSensors;
-extern const int alert_WS;
 extern Sensor* sensor;
 extern const int pumpTime;
-extern const unsigned char pump;
-extern const unsigned char relay_Sensors;
 
 #define ON  LOW
 #define OFF HIGH
-#define WS  maxSensors-1
 
 void LedOn();
 void LedOff();
@@ -23,22 +19,42 @@ class Plant
 {
   private:
   
-      signed char valve;         // пин клапана
-      Sensor      hygrometer;    // гигрометр
+	  byte   id;		 // id цветка
+	  String name;       // имя цветка
+	  byte   valve_pin;  // пин клапана
+	  Sensor hygrometer; // гигрометр
+	  int    crit_wet;   // критическая влажность
+      
       
   public:  
 
-      Plant (signed char _valve = -1, Sensor _hygrometer = -1)
+      Plant (byte _valve = -1, Sensor _hygrometer = -1, int _crit_wet = -1)
       {
-          valve = _valve;
+          valve_pin = _valve;
           hygrometer = _hygrometer;
+		  crit_wet = _crit_wet;
+		  pinMode(valve_pin, OUTPUT);
       }
       
       Plant (const Plant& _flower)
       {
-          valve =      _flower.getValve();
+		  id = _flower.getId();
+		  name = _flower.getName();
+          valve_pin  = _flower.getValve();
           hygrometer = _flower.getHygrometer().getPin();
+		  crit_wet   = _flower.getCritWet();
+		  pinMode(valve_pin, OUTPUT);
       }
+
+	  void init()
+	  {
+		  pinMode(valve_pin, OUTPUT);
+	  }
+
+	  void setId(int _id)
+	  {
+		  id = _id;
+	  }
 
       void setVal(int _val)
       {
@@ -50,24 +66,43 @@ class Plant
       
       void setValve(signed char _valve)
       {
-          valve = _valve;
+          valve_pin = _valve;
       }
+
+	  void setName(String _name)
+	  {
+		  name = _name;
+	  }
+
+	  void setCritWet(int _critWet)
+	  {
+		  crit_wet = _critWet;
+	  }
 
       void setHygrometer(const Sensor& _hygrometer)
       {
           hygrometer = _hygrometer;
       }
-      
-      void setParams (signed char _valve, const Sensor& _hygrometer)
+
+      byte getValve() const
       {
-          valve = _valve;
-          hygrometer = _hygrometer;
+          return valve_pin;
       }
 
-      signed char getValve() const
-      {
-          return valve;
-      }
+	  int getCritWet() const
+	  {
+		  return crit_wet;
+	  }
+
+	  byte getId() const
+	  {
+		  return id;
+	  }
+
+	  String getName() const
+	  {
+		  return name;
+	  }
 
       const Sensor& getHygrometer() const
       {
@@ -78,11 +113,6 @@ class Plant
       {
           return hygrometer.getVal();
       }
-    
-      void init()
-      {
-          pinMode(valve,OUTPUT);
-      }
 
       void ask()
       {
@@ -91,49 +121,6 @@ class Plant
           //Serial.println(buf);
           Serial.println("   Plant.ask() Asking hygrometer...");
           hygrometer.ask();
-      }
-
-      void water()
-      {
-          Serial.println("STARTING TO WATER... ");
-          // добавить аск WS
-          if ( sensor[WS].getVal() <= alert_WS )                            // если у WS меньше чем Alert то воды нет!
-          {
-			  bool blink = true;
-              while (sensor[WS].getVal() <= alert_WS)                       
-              {
-                  Serial.println("NO WATER !");
-				  if (blink)
-				  {
-					  LedOn();
-				  }
-				  else
-				  {
-					  LedOff();
-				  }
-				  blink = !blink;					  
-                  
-                  delay(2000);
-                  Serial.println("ASKING FOR WATER...");
-                  digitalWrite(relay_Sensors, ON);
-                  delay(500);
-                  sensor[WS].ask();
-                  digitalWrite(relay_Sensors, OFF);
-              }
-              LedOff();
-          }
-          Serial.println("OK WATER, watering... ");    
-          digitalWrite(valve,ON);
-          Serial.println("VALVE ON");
-          digitalWrite(pump,ON);
-          Serial.println("PUMP ON");
-          delay(pumpTime);
-          digitalWrite(pump,OFF);
-           Serial.println("PUMP OFF");
-          delay(200);
-          digitalWrite(valve,OFF);
-          Serial.println("VALVE OFF");        
-      }
-                 
+      }   
 };
 //-------------------------------------------------------------/PLANT--------------------------------------------------------------

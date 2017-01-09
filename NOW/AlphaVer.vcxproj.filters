@@ -33,5 +33,8 @@
     <ClInclude Include="__vm\.NOW.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="EEPROMcell.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
