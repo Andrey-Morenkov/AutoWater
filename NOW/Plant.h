@@ -1,10 +1,10 @@
 #pragma once
 
-#include "Sensor.h"
+//#include "Sensor.h"
 
-extern const int maxSensors;
-extern Sensor* sensor;
-extern const int pumpTime;
+//extern const int maxSensors;
+//extern Sensor* sensor;
+//extern const int pumpTime;
 
 #define ON  LOW
 #define OFF HIGH
@@ -17,110 +17,113 @@ void LedOff();
 //--------------------------------------------------------------PLANT--------------------------------------------------------------
 class Plant
 {
-  private:
-  
-	  byte   id;		 // id цветка
-	  String name;       // имя цветка
-	  byte   valve_pin;  // пин клапана
-	  Sensor hygrometer; // гигрометр
-	  int    crit_wet;   // критическая влажность
-      
-      
-  public:  
+private:
 
-      Plant (byte _valve = -1, Sensor _hygrometer = -1, int _crit_wet = -1)
-      {
-          valve_pin = _valve;
-          hygrometer = _hygrometer;
-		  crit_wet = _crit_wet;
-		  pinMode(valve_pin, OUTPUT);
-      }
-      
-      Plant (const Plant& _flower)
-      {
-		  id = _flower.getId();
-		  name = _flower.getName();
-          valve_pin  = _flower.getValve();
-          hygrometer = _flower.getHygrometer().getPin();
-		  crit_wet   = _flower.getCritWet();
-		  pinMode(valve_pin, OUTPUT);
-      }
+	byte   id;		      // id цветка
+	int    wetness;     // влажность
+	String cname;       // имя цветка
+	byte   hygro_pin;   // пин гигрометра 
+	byte   valve_pin;   // пин клапана
+	int    crit_wet;    // критическая влажность
 
-	  void init()
-	  {
-		  pinMode(valve_pin, OUTPUT);
-	  }
 
-	  void setId(int _id)
-	  {
-		  id = _id;
-	  }
+public:
 
-      void setVal(int _val)
-      {
-          //char buf[64];
-          //snprintf(buf, sizeof(buf), "Plant: 0x%x, hygrometer: 0x%x", this, &hygrometer);
-          //Serial.println(buf);
-          hygrometer.setVal(_val);
-      }
-      
-      void setValve(signed char _valve)
-      {
-          valve_pin = _valve;
-      }
+	Plant(byte _valve = -1, int _hygrometer = -1, int _crit_wet = -1)
+	{
+		valve_pin = _valve;
+		hygro_pin = _hygrometer;
+		crit_wet = _crit_wet;
+	}
 
-	  void setName(String _name)
-	  {
-		  name = _name;
-	  }
+	Plant(const Plant& _flower)
+	{
+		id = _flower.getId();
+		wetness = _flower.getWetness();
+		cname = _flower.getName();
+		valve_pin = _flower.getValve();
+		hygro_pin = _flower.getHygroPin();
+		crit_wet = _flower.getCritWet();
+		pinMode(valve_pin, OUTPUT);
+	}
 
-	  void setCritWet(int _critWet)
-	  {
-		  crit_wet = _critWet;
-	  }
+	void init()
+	{
+		pinMode(valve_pin, OUTPUT);
+	}
 
-      void setHygrometer(const Sensor& _hygrometer)
-      {
-          hygrometer = _hygrometer;
-      }
+	void setId(int _id)
+	{
+		id = _id;
+	}
 
-      byte getValve() const
-      {
-          return valve_pin;
-      }
+	int getWetness() const
+	{
+		return wetness;
+	}
 
-	  int getCritWet() const
-	  {
-		  return crit_wet;
-	  }
+	void setVal(int _val)
+	{
+		//char buf[64];
+		//snprintf(buf, sizeof(buf), "Plant: 0x%x, hygrometer: 0x%x", this, &hygrometer);
+		//Serial.println(buf);
+		wetness = _val;
+	}
 
-	  byte getId() const
-	  {
-		  return id;
-	  }
+	void setValve(signed char _valve)
+	{
+		valve_pin = _valve;
+	}
 
-	  String getName() const
-	  {
-		  return name;
-	  }
+	void setName(String _name)
+	{
+		cname = _name;
+	}
 
-      const Sensor& getHygrometer() const
-      {
-          return hygrometer;
-      }
+	void setCritWet(int _critWet)
+	{
+		crit_wet = _critWet;
+	}
 
-      int getStat()
-      {
-          return hygrometer.getVal();
-      }
+	void setHygroPin(int _pin)
+	{
+		hygro_pin = _pin;
+	}
 
-      void ask()
-      {
-          //char buf[64];
-          //snprintf(buf, sizeof(buf), "Plant: 0x%x, hygrometer: 0x%x", this, &hygrometer);
-          //Serial.println(buf);
-          Serial.println("   Plant.ask() Asking hygrometer...");
-          hygrometer.ask();
-      }   
+	byte getHygroPin() const
+	{
+		return hygro_pin;
+	}
+
+	byte getValve() const
+	{
+		return valve_pin;
+	}
+
+	int getCritWet() const
+	{
+		return crit_wet;
+	}
+
+	byte getId() const
+	{
+		return id;
+	}
+
+	String getName() const
+	{
+		return cname;
+	}
+
+	int ask()
+	{
+		Serial.print("ID : ");
+		Serial.print(id);
+		Serial.print(" ");
+		this->wetness = analogRead(hygro_pin);
+		Serial.print("Hygrometer: ");
+		Serial.println(this->wetness);
+		return this->wetness;
+	}
 };
 //-------------------------------------------------------------/PLANT--------------------------------------------------------------

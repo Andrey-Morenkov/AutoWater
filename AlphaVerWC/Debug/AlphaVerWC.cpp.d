@@ -1,5 +1,5 @@
-C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\AlphaVer.cpp.o: \
- C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\AlphaVer.cpp \
+C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVerWC\diecimila_atmega328\AlphaVerWC.cpp.o: \
+ C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVerWC\diecimila_atmega328\AlphaVerWC.cpp \
  C:\Program\ Files\ (x86)\Arduino\hardware\arduino\avr\cores\arduino/arduino.h \
  C:\Program\ Files\ (x86)\Arduino\hardware\arduino\avr\cores\arduino/binary.h \
  C:\Program\ Files\ (x86)\Arduino\hardware\arduino\avr\cores\arduino/WCharacter.h \
@@ -16,6 +16,5 @@ C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\Al
  C:\Program\ Files\ (x86)\Arduino\libraries\Streaming/Streaming.h \
  C:\Program\ Files\ (x86)\Arduino\hardware\arduino\avr\cores\arduino/Arduino.h \
  C:\Program\ Files\ (x86)\Arduino\libraries\TimerOne-r11/TimerOne.h \
- C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\Sensor.h \
- C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\Plant.h \
- C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVer\diecimila_atmega328\EEPROMcell.h
+ C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVerWC\diecimila_atmega328\Sensor.h \
+ C:\Users\Hryasch\AppData\Local\Temp\VMicroBuilds\AlphaVerWC\diecimila_atmega328\Plant.h
